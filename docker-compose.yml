@@ -1,0 +1,115 @@
+version: '3.8'
+
+x-common-variables: &common-variables
+  TZ: ${TIME_ZONE}
+
+services:
+  redis:
+    container_name: redis
+    image: redis:5.0.5
+  
+  db:
+    image: postgres
+    restart: unless-stopped
+    ports:
+      - 5433:5432
+    volumes:
+      - ./db_home:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+
+  webserver:
+    image: ${AIRFLOW_IMAGE}
+    container_name: airflow-web
+    restart: always
+    depends_on:
+      - redis
+      - db
+    environment:
+      *common-variables
+    volumes: 
+      - ./dags:${AIRFLOW_HOME}/dags
+      - ./config/.keys:${AIRFLOW_HOME}/config/.keys
+      - ./script:${AIRFLOW_HOME}/script
+      - ./config/variables:${AIRFLOW_HOME}/config/variables
+    ports:
+      - "8080:8080"
+      - "587:587"
+    env_file:
+      - ./config/envs/airflow.env
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f ${AIRFLOW_HOME}/airflow-webserver.pid ]"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    command: bash -c """
+        source ${AIRFLOW_HOME}/script/setting.sh && 
+        airflow webserver
+        """
+
+  scheduler:
+    image: ${AIRFLOW_IMAGE}
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      - webserver
+    environment:
+      *common-variables
+    volumes: 
+      - ./dags:${AIRFLOW_HOME}/dags
+    env_file:
+      - ./config/envs/airflow.env
+    command: bash -c """
+        airflow scheduler
+        """
+
+  worker1:
+    image: ${AIRFLOW_IMAGE}
+    container_name: airflow-worker1
+    restart: always
+    depends_on:
+      - scheduler
+    environment:
+      *common-variables
+    volumes: 
+      - ./dags:${AIRFLOW_HOME}/dags
+      - ./config/.keys:${AIRFLOW_HOME}/config/.keys
+    env_file:
+      - ./config/envs/airflow.env
+    command: bash -c """
+        airflow celery worker
+        """ 
+
+  worker2:
+    image: ${AIRFLOW_IMAGE}
+    container_name: airflow-worker2
+    restart: always
+    depends_on:
+      - scheduler
+    environment:
+      *common-variables
+    volumes: 
+      - ./dags:${AIRFLOW_HOME}/dags
+      - ./config/.keys:${AIRFLOW_HOME}/config/.keys
+    env_file:
+      - ./config/envs/airflow.env
+    command: bash -c """
+        airflow celery worker
+        """ 
+  flower:
+    image: ${AIRFLOW_IMAGE}
+    container_name: airflow-flower
+    restart: always
+    depends_on: 
+      - redis
+    environment:
+      *common-variables
+    env_file:
+      - ./config/envs/airflow.env
+    ports:
+      - "5555:5555"
+    command: bash -c """
+        airflow celery flower
+        """

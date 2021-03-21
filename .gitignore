@@ -1,0 +1,7 @@
+config/.keys
+config/envs/log.env
+config/envs/smtp.env
+__pycache__
+.vscode
+db_home
+template
